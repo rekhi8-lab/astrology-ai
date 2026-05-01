@@ -111,6 +111,11 @@ def handle_reflection_response(
     )
     frequent_topics = ", ".join(user_profile.get("frequent_topics", [])) or "None yet"
     depth_preference = user_profile.get("depth_preference", "short")
+    insights_section = (
+        "Previously, the user expressed:\n" + insights
+        if insights
+        else "No directly relevant prior insights."
+    )
 
     prompt = f"""
 You are responding to a user's reflection, not a question.
@@ -134,7 +139,7 @@ User profile:
 - Frequent topics: {frequent_topics}
 
 User insights:
-{("Previously, the user expressed:\n" + insights) if insights else "No directly relevant prior insights."}
+{insights_section}
 
 Retrieved context:
 {context or "No relevant prior reflection context found."}

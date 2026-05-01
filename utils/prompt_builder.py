@@ -19,6 +19,11 @@ def build_prompt(
         f"- {item['metadata'].get('interpretation', item['text'])}"
         for item in insights[:2]
     )
+    insights_section = (
+        "Previously, the user expressed:\n" + insight_block
+        if insight_block
+        else "No directly relevant prior insights."
+    )
 
     return f"""
 You are a personalized astrology learning companion.
@@ -36,7 +41,7 @@ User profile:
 - Frequently asked topics: {frequent_topics}
 
 User insights:
-{("Previously, the user expressed:\n" + insight_block) if insight_block else "No directly relevant prior insights."}
+{insights_section}
 
 Retrieved context:
 {context or "No prior context found."}
