@@ -5,6 +5,7 @@ import logging
 from collections import defaultdict
 from datetime import date
 from datetime import datetime
+from pathlib import Path
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
@@ -21,6 +22,7 @@ from memory.trajectory import build_learning_trajectory
 from memory.user_profiles import get_user_profile, update_user_profile
 from storage.sheets_logger import log_entry
 from utils.cost_tracker import estimate_cost
+from utils.helpers import delete_file, ensure_directory
 from utils.prompt_builder import build_prompt
 from utils.reflection import generate_reflection
 
@@ -158,16 +160,44 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if message is None or user is None:
         return
 
+    file_path: str | None = None
+
     try:
-        processed_input = await process_input(message)
+        if message.text:
+            processed_input = await asyncio.to_thread(process_input, message.text, None)
+        elif message.photo:
+            file_id = message.photo[-1].file_id
+            temp_dir = Path("/tmp") if Path("/tmp").exists() else Path("tmp")
+            ensure_directory(temp_dir)
+            file_path = str(temp_dir / f"{file_id}.jpg")
+            telegram_file = await context.bot.get_file(file_id)
+            await telegram_file.download_to_drive(file_path)
+            processed_input = await asyncio.to_thread(process_input, None, file_path)
+        elif message.document and (
+            (message.document.mime_type == "application/pdf")
+            or (message.document.file_name or "").lower().endswith(".pdf")
+        ):
+            file_id = message.document.file_id
+            temp_dir = Path("/tmp") if Path("/tmp").exists() else Path("tmp")
+            ensure_directory(temp_dir)
+            file_path = str(temp_dir / f"{file_id}.pdf")
+            telegram_file = await context.bot.get_file(file_id)
+            await telegram_file.download_to_drive(file_path)
+            processed_input = await asyncio.to_thread(process_input, None, file_path)
+        else:
+            raise ValueError("Unsupported message type. Send text, an image, a PDF, or a link.")
+
         raw_input = processed_input.text
     except ValueError as exc:
         await message.reply_text(str(exc))
         return
     except Exception:
         logger.exception("Failed to process inbound message")
-        await message.reply_text("I couldn't read that input. Try a text message, image, PDF, or URL.")
+        await message.reply_text("Could not extract readable content from file")
         return
+    finally:
+        if file_path:
+            delete_file(file_path)
 
     if not raw_input.strip():
         await message.reply_text("I couldn't extract usable text from that message.")
