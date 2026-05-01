@@ -33,3 +33,14 @@ def store_documents(text: str, metadata: dict) -> None:
 def store_interaction(user_input: str, response: str, metadata: dict) -> None:
     combined = f"User:\n{user_input}\n\nAssistant:\n{response}"
     store_documents(combined, metadata)
+
+
+def is_valid_memory(text: str) -> bool:
+    cleaned = " ".join((text or "").split())
+    if not cleaned:
+        return False
+    if len(cleaned) < 30:
+        return False
+    if len(cleaned.split()) < 6:
+        return False
+    return True

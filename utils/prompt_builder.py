@@ -1,21 +1,42 @@
 from __future__ import annotations
 
 
-def build_prompt(user_input: str, context_chunks: list[dict]) -> str:
+def build_prompt(
+    user_input: str,
+    context_chunks: list[dict],
+    user_profile: dict | None = None,
+    relevant_insights: list[dict] | None = None,
+) -> str:
     context = "\n\n".join(
         f"[Context {index + 1}]\n{item['text']}"
         for index, item in enumerate(context_chunks)
     )
+    profile = user_profile or {}
+    frequent_topics = ", ".join(profile.get("frequent_topics", [])) or "None yet"
+    depth_preference = profile.get("depth_preference", "short")
+    insights = relevant_insights or []
+    insight_block = "\n".join(
+        f"- {item['metadata'].get('interpretation', item['text'])}"
+        for item in insights[:2]
+    )
 
     return f"""
-You are a precise astrology teacher.
+You are a personalized astrology learning companion.
 
-Rules:
-- Default concise.
-- Expand only if the user asks.
-- Build on prior understanding.
-- Avoid repetition.
+Guidelines:
+- Adapt explanation depth to user preference.
+- Build on past topics if relevant.
+- Avoid repeating basic explanations.
+- Connect current answer with past learning when possible.
+- If relevant, refer to past user insights to build continuity. Do not force it if unrelated.
 - If context is weak or missing, say so briefly and answer carefully.
+
+User profile:
+- Preferred depth: {depth_preference}
+- Frequently asked topics: {frequent_topics}
+
+User insights:
+{("Previously, the user expressed:\n" + insight_block) if insight_block else "No directly relevant prior insights."}
 
 Retrieved context:
 {context or "No prior context found."}

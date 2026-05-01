@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections import defaultdict
 from datetime import date
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
@@ -11,12 +12,17 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filte
 from ai.claude_client import generate_response
 from config import settings
 from ingestion.router import process_input
-from memory.chroma_db import store_interaction
+from memory.chroma_db import is_valid_memory, store_documents, store_interaction
+from memory.insight_evolution import compare_insights
+from memory.insight_extractor import extract_user_insight
 from memory.ranking import rank_context
-from memory.retriever import retrieve_context
+from memory.retriever import get_insight_sequence, get_recent_insights, get_relevant_insights, retrieve_context
+from memory.trajectory import build_learning_trajectory
+from memory.user_profiles import get_user_profile, update_user_profile
 from storage.sheets_logger import log_entry
 from utils.cost_tracker import estimate_cost
 from utils.prompt_builder import build_prompt
+from utils.reflection import generate_reflection
 
 
 logger = logging.getLogger(__name__)
@@ -43,6 +49,101 @@ class DailyBudget:
 
 budget = DailyBudget()
 user_failures: defaultdict[int, int] = defaultdict(int)
+FIRST_PERSON_INDICATORS = (
+    "i think",
+    "i feel",
+    "maybe",
+    "it seems",
+    "in my case",
+)
+REFLECTION_REPLY_PHRASES = (
+    "this relates",
+    "this connects",
+    "i understand",
+)
+
+
+def has_topic_overlap(query: str, frequent_topics: list[str]) -> bool:
+    lowered = query.lower()
+    if any(topic in lowered for topic in frequent_topics):
+        return True
+
+    query_terms = {term for term in lowered.split() if len(term) > 2}
+    for topic in frequent_topics:
+        topic_terms = {term for term in topic.lower().split() if len(term) > 2}
+        if query_terms & topic_terms:
+            return True
+    return False
+
+
+def is_reflection_reply(user_message: str) -> bool:
+    lowered = user_message.lower().strip()
+    if len(lowered) <= 20:
+        return False
+
+    has_first_person = any(indicator in lowered for indicator in FIRST_PERSON_INDICATORS)
+    has_reflection_phrase = any(phrase in lowered for phrase in REFLECTION_REPLY_PHRASES)
+    return has_first_person or has_reflection_phrase
+
+
+def should_extract_insight(user_message: str) -> bool:
+    lowered = user_message.lower().strip()
+    if len(lowered) <= 30:
+        return False
+    if lowered in {"yes", "yeah", "okay", "ok", "sure", "got it", "understood"}:
+        return False
+    return True
+
+
+def handle_reflection_response(
+    user_profile: dict,
+    user_message: str,
+    retrieved_context: list[dict],
+    relevant_insights: list[dict],
+) -> tuple[str, object | None]:
+    context = "\n\n".join(
+        f"[Reflection Context {index + 1}]\n{item['text']}"
+        for index, item in enumerate(retrieved_context)
+    )
+    insights = "\n".join(
+        f"- {item['metadata'].get('interpretation', item['text'])}"
+        for item in relevant_insights[:2]
+    )
+    frequent_topics = ", ".join(user_profile.get("frequent_topics", [])) or "None yet"
+    depth_preference = user_profile.get("depth_preference", "short")
+
+    prompt = f"""
+You are responding to a user's reflection, not a question.
+
+Your role:
+- Interpret their thinking.
+- Expand it.
+- Gently guide deeper insight.
+- Avoid repeating definitions.
+
+Response goals:
+- Briefly acknowledge their reflection.
+- Summarize the meaning of what they are expressing.
+- Add one layer of deeper insight or a gentle correction if needed.
+- End with one specific follow-up question.
+- Compare the user's current reflection with their past insights.
+- Highlight any shift, reinforcement, or contradiction when relevant.
+
+User profile:
+- Preferred depth: {depth_preference}
+- Frequent topics: {frequent_topics}
+
+User insights:
+{("Previously, the user expressed:\n" + insights) if insights else "No directly relevant prior insights."}
+
+Retrieved context:
+{context or "No relevant prior reflection context found."}
+
+User reflection:
+{user_message}
+""".strip()
+
+    return generate_response(prompt)
 
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -53,7 +154,8 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     try:
-        raw_input = await process_input(message)
+        processed_input = await process_input(message)
+        raw_input = processed_input.text
     except ValueError as exc:
         await message.reply_text(str(exc))
         return
@@ -66,6 +168,26 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await message.reply_text("I couldn't extract usable text from that message.")
         return
 
+    prior_topics = list(get_user_profile(user.id).get("frequent_topics", []))
+    user_profile = update_user_profile(user.id, raw_input)
+    timestamp = datetime.utcnow().isoformat()
+    reflection_mode = is_reflection_reply(raw_input)
+
+    if processed_input.should_store and is_valid_memory(raw_input) and not reflection_mode:
+        try:
+            await asyncio.to_thread(
+                store_documents,
+                raw_input,
+                {
+                    "type": processed_input.source_type,
+                    "user_id": str(user.id),
+                    "chat_id": str(update.effective_chat.id) if update.effective_chat else "unknown",
+                    "stored_at": timestamp,
+                },
+            )
+        except Exception:
+            logger.exception("Failed to store inbound content in Chroma")
+
     try:
         chunks = await asyncio.wait_for(
             asyncio.to_thread(retrieve_context, raw_input),
@@ -76,38 +198,136 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.exception("Context retrieval failed")
         ranked = []
 
-    prompt = build_prompt(raw_input, ranked)
+    try:
+        relevant_insights = await asyncio.wait_for(
+            asyncio.to_thread(get_relevant_insights, user.id, raw_input, 2),
+            timeout=settings.max_retrieval_time,
+        )
+    except Exception:
+        logger.exception("Insight retrieval failed")
+        relevant_insights = []
 
     try:
-        response, usage = await asyncio.wait_for(
-            asyncio.to_thread(generate_response, prompt),
-            timeout=settings.max_ai_time,
-        )
+        if reflection_mode:
+            response, usage = await asyncio.wait_for(
+                asyncio.to_thread(
+                    handle_reflection_response,
+                    user_profile,
+                    raw_input,
+                    ranked,
+                    relevant_insights,
+                ),
+                timeout=settings.max_ai_time,
+            )
+        else:
+            prompt = build_prompt(raw_input, ranked, user_profile, relevant_insights)
+            response, usage = await asyncio.wait_for(
+                asyncio.to_thread(generate_response, prompt),
+                timeout=settings.max_ai_time,
+            )
     except asyncio.TimeoutError:
         await message.reply_text("The model took too long to respond. Please try again.")
         return
 
+    if not reflection_mode and has_topic_overlap(raw_input, prior_topics):
+        response = f"You've explored this topic before. Let's go deeper.\n\n{response}"
+
+    if reflection_mode:
+        final_response = response
+    else:
+        # Add a lightweight cognitive reflection on selected turns.
+        reflection = generate_reflection(user_profile, raw_input, response)
+        final_response = response if not reflection else f"{response}\n\n{reflection}"
+
     cost = estimate_cost(usage)
     exceeded, count, total_cost = budget.record(cost)
 
-    await message.reply_text(response)
+    if reflection_mode and should_extract_insight(raw_input):
+        insight = extract_user_insight(raw_input, user_profile)
+        if insight:
+            try:
+                past_insights = await asyncio.to_thread(
+                    get_recent_insights,
+                    user.id,
+                    insight["topic"],
+                    3,
+                )
+                filtered_past_insights = [
+                    item
+                    for item in past_insights
+                    if item.get("metadata", {}).get("interpretation") != insight["interpretation"]
+                ]
+                evolution = compare_insights(insight, filtered_past_insights)
+                if evolution:
+                    final_response = (
+                        f"{final_response}\n\n"
+                        f"{evolution['summary']}"
+                    )
+            except Exception:
+                logger.exception("Failed to compare insight evolution")
+
+            try:
+                insight_sequence = await asyncio.to_thread(
+                    get_insight_sequence,
+                    user.id,
+                    insight["topic"],
+                    5,
+                )
+                current_sequence = [
+                    *insight_sequence,
+                    {"text": insight["interpretation"], "metadata": insight},
+                ]
+                trajectory = build_learning_trajectory(current_sequence[-5:])
+                if trajectory and trajectory.get("trajectory_type"):
+                    final_response = (
+                        f"{final_response}\n\n"
+                        f"{trajectory['summary']}"
+                    )
+                    if trajectory.get("guidance"):
+                        pause_line = "Take a moment with this..."
+                        final_response = f"{final_response}\n\n{pause_line}\n{trajectory['guidance']}"
+            except Exception:
+                logger.exception("Failed to build learning trajectory")
+
+            try:
+                await asyncio.to_thread(
+                    store_interaction,
+                    user_input=raw_input,
+                    response=insight["interpretation"],
+                    metadata={
+                        "type": "insight",
+                        "topic": insight["topic"],
+                        "interpretation": insight["interpretation"],
+                        "confidence": insight["confidence"],
+                        "sentiment": insight.get("sentiment", ""),
+                        "user_id": str(user.id),
+                        "chat_id": str(update.effective_chat.id) if update.effective_chat else "unknown",
+                        "stored_at": timestamp,
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to store extracted insight")
+
+    await message.reply_text(final_response)
 
     try:
         await asyncio.to_thread(
             store_interaction,
             user_input=raw_input,
-            response=response,
+            response=final_response,
             metadata={
-                "type": "interaction",
+                "type": "reflection" if reflection_mode else "interaction",
+                "intent": "user_interpretation" if reflection_mode else "question_answer",
                 "user_id": str(user.id),
                 "chat_id": str(update.effective_chat.id) if update.effective_chat else "unknown",
+                "stored_at": timestamp,
             },
         )
     except Exception:
         logger.exception("Failed to store interaction in Chroma")
 
     try:
-        await asyncio.to_thread(log_entry, raw_input, response, cost)
+        await asyncio.to_thread(log_entry, raw_input, final_response, cost)
     except Exception:
         logger.exception("Failed to log interaction to Sheets")
 
