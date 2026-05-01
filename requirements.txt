@@ -10,3 +10,4 @@ Pillow
 PyMuPDF
 requests
 beautifulsoup4
+numpy==1.26.4
