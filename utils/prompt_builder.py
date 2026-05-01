@@ -6,6 +6,7 @@ def build_prompt(
     context_chunks: list[dict],
     user_profile: dict | None = None,
     relevant_insights: list[dict] | None = None,
+    ephemeris_context: str = "",
 ) -> str:
     context = "\n\n".join(
         f"[Context {index + 1}]\n{item['text']}"
@@ -45,6 +46,9 @@ User insights:
 
 Retrieved context:
 {context or "No prior context found."}
+
+Ephemeris context:
+{ephemeris_context or "No ephemeris context matched."}
 
 User question:
 {user_input}

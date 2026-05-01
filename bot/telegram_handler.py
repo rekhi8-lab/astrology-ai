@@ -8,10 +8,13 @@ from datetime import datetime
 from pathlib import Path
 
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 from ai.claude_client import generate_response
 from config import settings
+from ephemeris.loader import load_ephemeris_data
+from ephemeris.parser import RAW_DIR, parse_ephemeris_pdf, save_ephemeris_data
+from ephemeris.service import resolve_ephemeris
 from ingestion.router import process_input
 from memory.chroma_db import is_valid_memory, store_documents, store_interaction
 from memory.insight_evolution import compare_insights
@@ -102,6 +105,7 @@ def handle_reflection_response(
     user_message: str,
     retrieved_context: list[dict],
     relevant_insights: list[dict],
+    ephemeris_context: str,
 ) -> tuple[str, object | None]:
     context = "\n\n".join(
         f"[Reflection Context {index + 1}]\n{item['text']}"
@@ -146,6 +150,9 @@ User insights:
 Retrieved context:
 {context or "No relevant prior reflection context found."}
 
+Ephemeris context:
+{ephemeris_context or "No ephemeris context matched."}
+
 User reflection:
 {user_message}
 """.strip()
@@ -153,11 +160,47 @@ User reflection:
     return generate_response(prompt)
 
 
+async def handle_upload_ephemeris(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if message is None:
+        return
+
+    document = message.document
+    if document is None or not (
+        document.mime_type == "application/pdf"
+        or (document.file_name or "").lower().endswith(".pdf")
+    ):
+        await message.reply_text("Attach a PDF with the /upload_ephemeris command in the caption.")
+        return
+
+    ensure_directory(RAW_DIR)
+    target_path = RAW_DIR / (document.file_name or f"{document.file_id}.pdf")
+
+    try:
+        telegram_file = await context.bot.get_file(document.file_id)
+        await telegram_file.download_to_drive(str(target_path))
+        parsed = await asyncio.to_thread(parse_ephemeris_pdf, target_path)
+        if not parsed:
+            await message.reply_text("I could not parse usable ephemeris rows from that PDF.")
+            return
+
+        saved_paths = await asyncio.to_thread(save_ephemeris_data, parsed)
+        load_ephemeris_data()
+        saved_names = ", ".join(path.name for path in saved_paths)
+        await message.reply_text(f"Ephemeris parsed successfully. Saved: {saved_names}")
+    except Exception:
+        logger.exception("Failed to upload ephemeris PDF")
+        await message.reply_text("I couldn't parse that ephemeris PDF.")
+
+
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     user = update.effective_user
 
     if message is None or user is None:
+        return
+
+    if (message.caption or "").strip().startswith("/upload_ephemeris"):
         return
 
     file_path: str | None = None
@@ -207,6 +250,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_profile = update_user_profile(user.id, raw_input)
     timestamp = datetime.utcnow().isoformat()
     reflection_mode = is_reflection_reply(raw_input)
+    ephemeris_context = resolve_ephemeris(raw_input)
 
     if processed_input.should_store and is_valid_memory(raw_input) and not reflection_mode:
         try:
@@ -251,11 +295,18 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     raw_input,
                     ranked,
                     relevant_insights,
+                    ephemeris_context,
                 ),
                 timeout=settings.max_ai_time,
             )
         else:
-            prompt = build_prompt(raw_input, ranked, user_profile, relevant_insights)
+            prompt = build_prompt(
+                raw_input,
+                ranked,
+                user_profile,
+                relevant_insights,
+                ephemeris_context,
+            )
             response, usage = await asyncio.wait_for(
                 asyncio.to_thread(generate_response, prompt),
                 timeout=settings.max_ai_time,
@@ -379,6 +430,13 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 def run() -> None:
     settings.require_runtime_secrets()
     app = ApplicationBuilder().token(settings.telegram_token).build()
+    app.add_handler(CommandHandler("upload_ephemeris", handle_upload_ephemeris))
+    app.add_handler(
+        MessageHandler(
+            filters.Document.PDF & filters.CaptionRegex(r"^/upload_ephemeris"),
+            handle_upload_ephemeris,
+        )
+    )
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle))
     logger.info("Starting Telegram polling")
     app.run_polling(drop_pending_updates=True)
