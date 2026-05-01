@@ -1,0 +1,12 @@
+python-telegram-bot==20.7
+anthropic
+chromadb
+tiktoken
+pandas
+gspread
+oauth2client
+pytesseract
+Pillow
+PyMuPDF
+requests
+beautifulsoup4
