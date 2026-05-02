@@ -10,7 +10,9 @@ def extract_date(query: str) -> str | None:
     numeric_match = re.search(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", query)
     if numeric_match:
         year, month, day = numeric_match.groups()
-        return f"{year}-{int(month):02d}-{int(day):02d}"
+        date = f"{year}-{int(month):02d}-{int(day):02d}"
+        print("Extracted date:", date)
+        return date
 
     long_month_match = re.search(
         r"\b(\d{1,2})\s+"
@@ -22,6 +24,9 @@ def extract_date(query: str) -> str | None:
     if long_month_match:
         day, month_name, year = long_month_match.groups()
         parsed = datetime.strptime(f"{day} {month_name} {year}", "%d %B %Y")
-        return parsed.strftime("%Y-%m-%d")
+        date = parsed.strftime("%Y-%m-%d")
+        print("Extracted date:", date)
+        return date
 
+    print("Extracted date:", None)
     return None

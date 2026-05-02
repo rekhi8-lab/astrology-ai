@@ -14,11 +14,13 @@ def load_ephemeris_data() -> dict[str, dict[str, str]]:
 
     if not PARSED_DIR.exists():
         EPHEMERIS_DATA.clear()
+        print("Loaded ephemeris dates:", len(EPHEMERIS_DATA))
         return EPHEMERIS_DATA
 
     for path in sorted(PARSED_DIR.glob("*.json")):
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            with open(path, "r", encoding="utf-8") as file_handle:
+                payload = json.load(file_handle)
         except json.JSONDecodeError:
             continue
         for date_key, values in payload.items():
@@ -27,7 +29,12 @@ def load_ephemeris_data() -> dict[str, dict[str, str]]:
 
     EPHEMERIS_DATA.clear()
     EPHEMERIS_DATA.update(data)
+    print("Loaded ephemeris dates:", len(EPHEMERIS_DATA))
     return EPHEMERIS_DATA
+
+
+def load_all() -> dict[str, dict[str, str]]:
+    return load_ephemeris_data()
 
 
 load_ephemeris_data()

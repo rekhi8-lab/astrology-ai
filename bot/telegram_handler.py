@@ -250,7 +250,9 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_profile = update_user_profile(user.id, raw_input)
     timestamp = datetime.utcnow().isoformat()
     reflection_mode = is_reflection_reply(raw_input)
-    ephemeris_context = resolve_ephemeris(raw_input)
+    from ephemeris.resolver import build_ephemeris_context
+    ephemeris_context = build_ephemeris_context(raw_input)
+    print("Ephemeris context:", ephemeris_context)
 
     if processed_input.should_store and is_valid_memory(raw_input) and not reflection_mode:
         try:
