@@ -351,6 +351,11 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 USER_PROFILE,
             )
 
+            print("USING FAST MODE:", bool(ephemeris_context))
+            print("====== FINAL PROMPT START ======")
+            print(prompt)
+            print("====== FINAL PROMPT END ======")
+
             response, usage = await asyncio.wait_for(
                 asyncio.to_thread(generate_response, prompt),
                 timeout=25,

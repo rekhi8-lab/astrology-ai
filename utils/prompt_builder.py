@@ -36,13 +36,12 @@ def build_prompt(
     if ephemeris_context:
         return f"""You are a personalised astrologer.
 
+The user's complete birth chart is already on file. Use it for all analysis.
+
 {profile_block}
 
 Current Transits:
 {ephemeris_context}
-
-Give a clear and complete answer in 2 short paragraphs.
-End with a final conclusion sentence.
 
 Question:
 {user_input}""".strip()
@@ -88,13 +87,14 @@ Question:
     # --- Final prompt ---
     return f"""You are a personalised astrology learning companion.
 
+The user's complete birth chart is already on file. Use it for all analysis.
+
 {profile_block}
 
 Guidelines:
-- Use the natal chart provided above.
+- Use the natal chart above for all interpretations.
 - Use ephemeris data when available.
 - Refer to planetary signs explicitly.
-- Treat the date as a real moment in time.
 - Compare transits with natal placements.
 - Keep the explanation clear, grounded, and non-generic.
 
