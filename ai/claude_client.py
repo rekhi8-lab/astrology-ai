@@ -20,7 +20,7 @@ def _get_client() -> anthropic.Anthropic:
     return client
 
 
-def generate_response(prompt: str, max_tokens: int = 300) -> tuple[str, object | None]:
+def generate_response(prompt: str, max_tokens: int = 450) -> tuple[str, object | None]:
     try:
         response = _get_client().messages.create(
             model=settings.claude_model,

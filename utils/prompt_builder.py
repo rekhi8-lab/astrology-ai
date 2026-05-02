@@ -11,11 +11,7 @@ def build_prompt(
     ephemeris_context: str = "",
 ) -> str:
 
-    # --- Load natal chart ONLY when relevant (FIX 3) ---
-    if any(word in user_input.lower() for word in ["saturn", "jupiter", "mars", "date", "202"]):
-        natal_chart = load_natal_chart()
-    else:
-        natal_chart = None
+    natal_chart = load_natal_chart()
 
     # --- Fast mode: bypass full prompt when ephemeris is available ---
     if ephemeris_context:
@@ -28,7 +24,7 @@ def build_prompt(
             if natal_chart
             else "Not available."
         )
-        return f"""You are an astrologer. Be concise.
+        return f"""You are an astrologer. Be concise and complete.
 
 Transit:
 {ephemeris_context}
@@ -36,8 +32,14 @@ Transit:
 Natal:
 {natal_section}
 
-Explain the key interaction and its impact in simple terms.
-Keep it under 120 words.
+Do:
+1. Identify key interaction
+2. Explain impact
+3. Give clear conclusion
+
+End your answer with a complete final statement.
+
+Keep under 150 words.
 
 Question:
 {user_input}""".strip()
