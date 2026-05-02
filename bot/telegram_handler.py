@@ -268,7 +268,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     timestamp = datetime.utcnow().isoformat()
     reflection_mode = is_reflection_reply(raw_input)
 
-    # --- Astro detection ---
+    # --- Astro detection (used only to skip RAG retrieval) ---
     _ASTRO_KEYWORDS = [
         "saturn", "jupiter", "mars", "venus", "mercury", "moon", "sun",
         "transit", "planet", "dasha", "astrology", "natal", "zodiac",
@@ -277,11 +277,13 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ]
     is_astro_query = any(word in raw_input.lower() for word in _ASTRO_KEYWORDS)
 
-    # --- Ephemeris gating ---
-    if is_astro_query:
-        ephemeris_context = await asyncio.to_thread(build_ephemeris_context, raw_input)
-    else:
+    # --- Ephemeris: always fetch unless clearly unrelated ---
+    _NON_ASTRO_KEYWORDS = ["weather", "news", "sports", "coding", "math", "recipe", "code"]
+    skip_ephemeris = any(word in raw_input.lower() for word in _NON_ASTRO_KEYWORDS)
+    if skip_ephemeris:
         ephemeris_context = None
+    else:
+        ephemeris_context = await asyncio.to_thread(build_ephemeris_context, raw_input)
     print("EPHEMERIS CONTEXT:", ephemeris_context)
 
     # --- Store memory ---
