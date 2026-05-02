@@ -53,6 +53,23 @@ class DailyBudget:
         return exceeded, self._count, self._total_cost
 
 
+def split_response(text: str, max_length: int = 3500) -> list[str]:
+    import re
+    sentences = re.split(r"(?<=[.!?]) +", text)
+    chunks: list[str] = []
+    current = ""
+    for sentence in sentences:
+        if len(current) + len(sentence) + (1 if current else 0) <= max_length:
+            current = current + " " + sentence if current else sentence
+        else:
+            if current:
+                chunks.append(current.strip())
+            current = sentence
+    if current:
+        chunks.append(current.strip())
+    return chunks or [text]
+
+
 budget = DailyBudget()
 user_failures: defaultdict[int, int] = defaultdict(int)
 FIRST_PERSON_INDICATORS = (
@@ -349,7 +366,8 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cost = estimate_cost(usage)
     exceeded, count, total_cost = budget.record(cost)
 
-    await message.reply_text(final_response)
+    for chunk in split_response(final_response):
+        await message.reply_text(chunk)
     try:
         await asyncio.to_thread(
             store_interaction,
