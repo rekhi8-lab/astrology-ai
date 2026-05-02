@@ -252,10 +252,17 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     timestamp = datetime.utcnow().isoformat()
     reflection_mode = is_reflection_reply(raw_input)
 
-    # --- Ephemeris gating ---
-    
+    # --- Astro detection ---
+    _ASTRO_KEYWORDS = [
+        "saturn", "jupiter", "mars", "venus", "mercury", "moon", "sun",
+        "transit", "planet", "dasha", "astrology", "natal", "zodiac",
+        "date", "202",
+        "now", "right now", "currently", "these days", "this phase",
+    ]
+    is_astro_query = any(word in raw_input.lower() for word in _ASTRO_KEYWORDS)
 
-    if any(word in raw_input.lower() for word in ["saturn", "jupiter", "mars", "transit", "date", "202"]):
+    # --- Ephemeris gating ---
+    if is_astro_query:
         ephemeris_context = await asyncio.to_thread(build_ephemeris_context, raw_input)
     else:
         ephemeris_context = None
@@ -275,12 +282,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         except Exception:
             logger.exception("Failed to store inbound content in Chroma")
-
-    # --- Detect astrology query ---
-    is_astro_query = any(
-        word in raw_input.lower()
-        for word in ["saturn", "jupiter", "mars", "transit", "date", "202"]
-    )
 
     if is_astro_query:
         ranked = []
