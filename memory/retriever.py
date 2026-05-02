@@ -1,7 +1,24 @@
 from __future__ import annotations
 
+import logging
+from datetime import datetime
+from pathlib import Path
+
 from config import settings
 from memory.chroma_db import collection
+
+logger = logging.getLogger(__name__)
+_AUDIT_LOG = Path(settings.chroma_path).parent / "memory_audit.log"
+
+
+def _log_retrieval(query: str, hit_count: int) -> None:
+    ts = datetime.utcnow().isoformat()
+    entry = f"{ts} | RETRIEVE | hits={hit_count} | query={query[:120].replace(chr(10), ' ')}\n"
+    try:
+        with _AUDIT_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(entry)
+    except Exception:
+        logger.warning("memory_audit.log retrieval write failed")
 
 
 def _overlap_score(query: str, document: str) -> int:
@@ -46,7 +63,9 @@ def retrieve_context(query: str) -> list[dict]:
         key=lambda item: _retrieval_score(query, item),
         reverse=True,
     )
-    return ranked[:target_count]
+    result = ranked[:target_count]
+    _log_retrieval(query, len(result))
+    return result
 
 
 def get_relevant_insights(user_id: int, query: str, limit: int = 2) -> list[dict]:
