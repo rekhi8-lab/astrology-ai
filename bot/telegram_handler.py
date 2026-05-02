@@ -54,20 +54,19 @@ class DailyBudget:
 
 
 def split_response(text: str, max_length: int = 3500) -> list[str]:
-    import re
-    sentences = re.split(r"(?<=[.!?]) +", text)
+    paragraphs = text.split("\n\n")
     chunks: list[str] = []
     current = ""
-    for sentence in sentences:
-        if len(current) + len(sentence) + (1 if current else 0) <= max_length:
-            current = current + " " + sentence if current else sentence
+    for para in paragraphs:
+        if len(current) + len(para) + 2 <= max_length:
+            current = current + "\n\n" + para if current else para
         else:
             if current:
                 chunks.append(current.strip())
-            current = sentence
+            current = para
     if current:
         chunks.append(current.strip())
-    return chunks or [text]
+    return chunks
 
 
 budget = DailyBudget()
@@ -366,8 +365,18 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cost = estimate_cost(usage)
     exceeded, count, total_cost = budget.record(cost)
 
-    for chunk in split_response(final_response):
-        await message.reply_text(chunk)
+    logger.debug("FULL RESPONSE LENGTH: %d", len(final_response))
+    logger.debug("FULL RESPONSE PREVIEW: %s", final_response[:500])
+    chunks = split_response(final_response)
+    logger.debug("TOTAL CHUNKS: %d", len(chunks))
+    for i, c in enumerate(chunks):
+        logger.debug("CHUNK %d LENGTH: %d", i, len(c))
+    if not chunks:
+        await message.reply_text(final_response)
+    else:
+        for chunk in chunks:
+            if chunk.strip():
+                await message.reply_text(chunk)
     try:
         await asyncio.to_thread(
             store_interaction,
