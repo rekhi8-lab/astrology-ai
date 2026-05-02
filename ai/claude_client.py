@@ -20,12 +20,12 @@ def _get_client() -> anthropic.Anthropic:
     return client
 
 
-def generate_response(prompt: str) -> tuple[str, object | None]:
+def generate_response(prompt: str, max_tokens: int = 300) -> tuple[str, object | None]:
     try:
         response = _get_client().messages.create(
             model=settings.claude_model,
-            max_tokens=800,
-            temperature=0.7,
+            max_tokens=max_tokens,
+            temperature=0.5,
             messages=[{"role": "user", "content": prompt}],
         )
 

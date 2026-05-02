@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ephemeris.natal_loader import load_natal_chart
+
 
 def build_prompt(
     user_input: str,
@@ -8,6 +10,50 @@ def build_prompt(
     relevant_insights: list[dict] | None = None,
     ephemeris_context: str = "",
 ) -> str:
+
+    # --- Load natal chart ONLY when relevant (FIX 3) ---
+    if any(word in user_input.lower() for word in ["saturn", "jupiter", "mars", "date", "202"]):
+        natal_chart = load_natal_chart()
+    else:
+        natal_chart = None
+
+    # --- Fast mode: bypass full prompt when ephemeris is available ---
+    if ephemeris_context:
+        natal_section = (
+            "\n".join(
+                f"{planet.capitalize()}: {data['degree']:.1f}° {data['sign']} (House {data.get('house', '-')})"
+                for planet, data in natal_chart.items()
+                if planet in ["sun", "moon", "saturn", "mars"]
+            )
+            if natal_chart
+            else "Not available."
+        )
+        return f"""You are an astrologer. Be concise.
+
+Transit:
+{ephemeris_context}
+
+Natal:
+{natal_section}
+
+Explain the key interaction and its impact in simple terms.
+Keep it under 120 words.
+
+Question:
+{user_input}""".strip()
+
+    # --- Compressed natal section (FIX 1) ---
+    natal_section = (
+        "User natal chart:\n" +
+        "\n".join(
+            f"{planet.capitalize()}: {data['degree']:.1f}° {data['sign']} (House {data.get('house', '-')})"
+            for planet, data in natal_chart.items()
+            if planet in ["sun", "moon", "saturn", "mars"]
+        )
+        if natal_chart
+        else "No natal chart available."
+    )
+
     # --- Context block ---
     context = "\n\n".join(
         f"[Context {index + 1}]\n{item['text']}"
@@ -23,7 +69,7 @@ def build_prompt(
     insights = relevant_insights or []
     insight_block = "\n".join(
         f"- {item['metadata'].get('interpretation', item['text'])}"
-        for item in insights[:2]
+        for item in insights[:1]
     )
 
     insights_section = (
@@ -32,7 +78,7 @@ def build_prompt(
         else "No directly relevant prior insights."
     )
 
-    # --- Ephemeris section (THIS is the key addition) ---
+    # --- Ephemeris section ---
     ephemeris_section = (
         f"Relevant planetary positions:\n{ephemeris_context}"
         if ephemeris_context
@@ -44,14 +90,11 @@ def build_prompt(
 You are a personalized astrology learning companion.
 
 Guidelines:
-- Adapt explanation depth to user preference.
-- Build on past topics if relevant.
-- Avoid repeating basic explanations.
-- Connect current answer with past learning when possible.
-- If relevant, refer to past user insights to build continuity. Do not force it if unrelated.
-- If context is weak or missing, say so briefly and answer carefully.
-- Use ephemeris data when available to ground your interpretation in real planetary positions.
-- Refer explicitly to planetary signs when explaining transits.
+- Use ephemeris data when available.
+- Refer to planetary signs explicitly.
+- Treat the date as a real moment in time.
+- When natal chart is available, compare transit with natal placements.
+- Keep the explanation clear, grounded, and non-generic.
 
 User profile:
 - Preferred depth: {depth_preference}
@@ -64,6 +107,8 @@ Retrieved context:
 {context or "No prior context found."}
 
 {ephemeris_section}
+
+{natal_section}
 
 User question:
 {user_input}

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from ephemeris.resolver import build_ephemeris_context
 
 import asyncio
 import logging
@@ -250,10 +251,16 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_profile = update_user_profile(user.id, raw_input)
     timestamp = datetime.utcnow().isoformat()
     reflection_mode = is_reflection_reply(raw_input)
-    from ephemeris.resolver import build_ephemeris_context
-    ephemeris_context = build_ephemeris_context(raw_input)
-    print("Ephemeris context:", ephemeris_context)
 
+    # --- Ephemeris gating ---
+    
+
+    if any(word in raw_input.lower() for word in ["saturn", "jupiter", "mars", "transit", "date", "202"]):
+        ephemeris_context = await asyncio.to_thread(build_ephemeris_context, raw_input)
+    else:
+        ephemeris_context = None
+
+    # --- Store memory ---
     if processed_input.should_store and is_valid_memory(raw_input) and not reflection_mode:
         try:
             await asyncio.to_thread(
@@ -269,25 +276,33 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception:
             logger.exception("Failed to store inbound content in Chroma")
 
-    try:
-        chunks = await asyncio.wait_for(
-            asyncio.to_thread(retrieve_context, raw_input),
-            timeout=settings.max_retrieval_time,
-        )
-        ranked = rank_context(chunks)
-    except Exception:
-        logger.exception("Context retrieval failed")
+    # --- Detect astrology query ---
+    is_astro_query = any(
+        word in raw_input.lower()
+        for word in ["saturn", "jupiter", "mars", "transit", "date", "202"]
+    )
+
+    if is_astro_query:
         ranked = []
-
-    try:
-        relevant_insights = await asyncio.wait_for(
-            asyncio.to_thread(get_relevant_insights, user.id, raw_input, 2),
-            timeout=settings.max_retrieval_time,
-        )
-    except Exception:
-        logger.exception("Insight retrieval failed")
         relevant_insights = []
+    else:
+        try:
+            chunks = await asyncio.wait_for(
+                asyncio.to_thread(retrieve_context, raw_input),
+                timeout=settings.max_retrieval_time,
+            )
+            ranked = rank_context(chunks)[:2]
 
+            relevant_insights = await asyncio.wait_for(
+                asyncio.to_thread(get_relevant_insights, user.id, raw_input, 2),
+                timeout=settings.max_retrieval_time,
+            )
+        except Exception:
+            logger.exception("Context retrieval failed")
+            ranked = []
+            relevant_insights = []
+
+    # --- Generate response ---
     try:
         if reflection_mode:
             response, usage = await asyncio.wait_for(
@@ -302,17 +317,21 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 timeout=settings.max_ai_time,
             )
         else:
-            prompt = build_prompt(
+            prompt = await asyncio.to_thread(
+                build_prompt,
                 raw_input,
                 ranked,
                 user_profile,
                 relevant_insights,
                 ephemeris_context,
             )
+            max_tokens = 300 if is_astro_query else 800
+
             response, usage = await asyncio.wait_for(
-                asyncio.to_thread(generate_response, prompt),
+                asyncio.to_thread(generate_response, prompt, max_tokens),
                 timeout=settings.max_ai_time,
             )
+
     except asyncio.TimeoutError:
         await message.reply_text("The model took too long to respond. Please try again.")
         return
@@ -323,81 +342,13 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if reflection_mode:
         final_response = response
     else:
-        # Add a lightweight cognitive reflection on selected turns.
         reflection = generate_reflection(user_profile, raw_input, response)
         final_response = response if not reflection else f"{response}\n\n{reflection}"
 
     cost = estimate_cost(usage)
     exceeded, count, total_cost = budget.record(cost)
 
-    if reflection_mode and should_extract_insight(raw_input):
-        insight = extract_user_insight(raw_input, user_profile)
-        if insight:
-            try:
-                past_insights = await asyncio.to_thread(
-                    get_recent_insights,
-                    user.id,
-                    insight["topic"],
-                    3,
-                )
-                filtered_past_insights = [
-                    item
-                    for item in past_insights
-                    if item.get("metadata", {}).get("interpretation") != insight["interpretation"]
-                ]
-                evolution = compare_insights(insight, filtered_past_insights)
-                if evolution:
-                    final_response = (
-                        f"{final_response}\n\n"
-                        f"{evolution['summary']}"
-                    )
-            except Exception:
-                logger.exception("Failed to compare insight evolution")
-
-            try:
-                insight_sequence = await asyncio.to_thread(
-                    get_insight_sequence,
-                    user.id,
-                    insight["topic"],
-                    5,
-                )
-                current_sequence = [
-                    *insight_sequence,
-                    {"text": insight["interpretation"], "metadata": insight},
-                ]
-                trajectory = build_learning_trajectory(current_sequence[-5:])
-                if trajectory and trajectory.get("trajectory_type"):
-                    final_response = (
-                        f"{final_response}\n\n"
-                        f"{trajectory['summary']}"
-                    )
-                    if trajectory.get("guidance"):
-                        pause_line = "Take a moment with this..."
-                        final_response = f"{final_response}\n\n{pause_line}\n{trajectory['guidance']}"
-            except Exception:
-                logger.exception("Failed to build learning trajectory")
-
-            try:
-                await asyncio.to_thread(
-                    store_interaction,
-                    user_input=raw_input,
-                    response=insight["interpretation"],
-                    metadata={
-                        "type": "insight",
-                        "topic": insight["topic"],
-                        "interpretation": insight["interpretation"],
-                        "confidence": insight["confidence"],
-                        "sentiment": insight.get("sentiment", ""),
-                        "user_id": str(user.id),
-                        "chat_id": str(update.effective_chat.id) if update.effective_chat else "unknown",
-                        "stored_at": timestamp,
-                    },
-                )
-            except Exception:
-                logger.exception("Failed to store extracted insight")
-
     await message.reply_text(final_response)
-
     try:
         await asyncio.to_thread(
             store_interaction,
