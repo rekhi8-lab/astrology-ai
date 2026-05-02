@@ -4,29 +4,25 @@ import re
 from datetime import datetime
 
 
-def extract_date(query: str) -> str | None:
-    query = query or ""
+def extract_date(text: str) -> str | None:
+    text = (text or "").strip()
 
-    numeric_match = re.search(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", query)
-    if numeric_match:
-        year, month, day = numeric_match.groups()
-        date = f"{year}-{int(month):02d}-{int(day):02d}"
-        print("Extracted date:", date)
-        return date
+    patterns_formats = [
+        (r"\b\d{4}-\d{2}-\d{2}\b",                        ["%Y-%m-%d"]),
+        (r"\b\d{2}-\d{2}-\d{4}\b",                        ["%d-%m-%Y"]),
+        (r"\b\d{2}/\d{2}/\d{4}\b",                        ["%d/%m/%Y"]),
+        (r"\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b",             ["%d %B %Y", "%d %b %Y"]),
+        (r"\b[A-Za-z]+\s+\d{1,2},\s*\d{4}\b",            ["%B %d, %Y", "%b %d, %Y"]),
+    ]
 
-    long_month_match = re.search(
-        r"\b(\d{1,2})\s+"
-        r"(January|February|March|April|May|June|July|August|September|October|November|December)"
-        r"\s+(20\d{2})\b",
-        query,
-        flags=re.IGNORECASE,
-    )
-    if long_month_match:
-        day, month_name, year = long_month_match.groups()
-        parsed = datetime.strptime(f"{day} {month_name} {year}", "%d %B %Y")
-        date = parsed.strftime("%Y-%m-%d")
-        print("Extracted date:", date)
-        return date
+    for pattern, formats in patterns_formats:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            date_str = match.group(0)
+            for fmt in formats:
+                try:
+                    return datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+                except ValueError:
+                    continue
 
-    print("Extracted date:", None)
     return None
