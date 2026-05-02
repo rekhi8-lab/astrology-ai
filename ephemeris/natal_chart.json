@@ -1,0 +1,14 @@
+{
+  "sun": {"sign": "Capricorn", "degree": 18.1, "house": 4},
+  "moon": {"sign": "Cancer", "degree": 2.5, "house": 10},
+  "mercury": {"sign": "Aquarius", "degree": 4.6, "house": 5},
+  "venus": {"sign": "Aquarius", "degree": 7.6, "house": 5},
+  "mars": {"sign": "Libra", "degree": 10.1, "house": 1},
+  "jupiter": {"sign": "Scorpio", "degree": 7.1, "house": 2},
+  "saturn": {"sign": "Libra", "degree": 21.8, "house": 2},
+  "uranus": {"sign": "Sagittarius", "degree": 3.1, "house": 3},
+  "neptune": {"sign": "Sagittarius", "degree": 25.4, "house": 4},
+  "pluto": {"sign": "Libra", "degree": 26.8, "house": 2},
+  "ascendant": {"sign": "Virgo", "degree": 20.1},
+  "midheaven": {"sign": "Gemini", "degree": 19.4}
+}
