@@ -22,5 +22,4 @@ Current Dasha Context:
 Saturn Mahadasha (2013–2032)
 Current Antardasha: Saturn / Mars (2025–2026 approx)
 
-This is the user's complete chart. Use this for all interpretations.
-Do NOT ask for birth details."""
+This is the user's complete chart. Use this for all interpretations."""

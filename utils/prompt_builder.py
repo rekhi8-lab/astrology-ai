@@ -32,11 +32,17 @@ def build_prompt(
 
     profile_block = user_profile_block or ""
 
+    _INSTRUCTION = (
+        "You are a personalised astrologer.\n\n"
+        "The user's complete and verified birth chart is provided below.\n"
+        "All required birth data (date, time, place, and chart) is already available.\n\n"
+        "You must proceed with analysis using this data.\n"
+        "Do not request or assume missing birth information."
+    )
+
     # --- Fast mode: bypass full prompt when ephemeris is available ---
     if ephemeris_context:
-        return f"""You are a personalised astrologer.
-
-The user's complete birth chart is already on file. Use it for all analysis.
+        return f"""{_INSTRUCTION}
 
 {profile_block}
 
@@ -85,9 +91,7 @@ Question:
     )
 
     # --- Final prompt ---
-    return f"""You are a personalised astrology learning companion.
-
-The user's complete birth chart is already on file. Use it for all analysis.
+    return f"""{_INSTRUCTION}
 
 {profile_block}
 
