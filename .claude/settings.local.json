@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('utils/prompt_builder.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; src=open\\('ai/claude_client.py'\\).read\\(\\); ast.parse\\(src\\); print\\('max_tokens=450:', '450' in src\\); print\\('temperature=0.5:', '0.5' in src\\)\")",
+      "Bash(xargs grep *)"
+    ]
+  }
+}

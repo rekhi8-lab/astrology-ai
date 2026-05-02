@@ -37,7 +37,7 @@ class Settings:
 
     top_k: int = _get_int("TOP_K", 4)
     max_retrieval_time: float = _get_float("MAX_RETRIEVAL_TIME", 1.5)
-    max_ai_time: float = _get_float("MAX_AI_TIME", 12.0)
+    max_ai_time: float = _get_float("MAX_AI_TIME", 60.0)
     daily_cost_limit: float = _get_float("DAILY_COST_LIMIT", 100.0)
 
     chroma_path: str = os.getenv("CHROMA_PATH", str(BASE_DIR / "chroma"))
