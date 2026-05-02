@@ -24,7 +24,7 @@ def build_prompt(
             if natal_chart
             else "Not available."
         )
-        return f"""You are an astrologer. Be concise but complete.
+        return f"""You are an astrologer.
 
 Transit:
 {ephemeris_context}
@@ -32,13 +32,16 @@ Transit:
 Natal:
 {natal_section}
 
-Instructions:
-- Focus on ONLY the most important interaction
-- Explain it in simple terms
-- Give ONE clear takeaway
+Answer in EXACT structure:
 
-Write in 3 short paragraphs.
-End with a complete final sentence.
+1. Core Transit Insight (2–3 sentences)
+2. Natal Impact (2–3 sentences)
+3. Current Life Theme (2–3 sentences)
+4. Final Takeaway (1–2 sentences)
+
+Ensure ALL 4 sections are completed.
+Do not leave the answer unfinished.
+If response is cut, prioritize completing the Final Takeaway section.
 
 Question:
 {user_input}""".strip()
