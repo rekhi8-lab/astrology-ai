@@ -13,40 +13,42 @@ def build_prompt(
 
     natal_chart = load_natal_chart()
 
+    _KEY_PLANETS = ["sun", "moon", "mercury", "venus", "mars", "jupiter",
+                    "saturn", "ascendant", "midheaven"]
+
+    def _build_natal_section(chart: dict | None) -> str:
+        if not chart:
+            return "Not available."
+        lines = []
+        for planet in _KEY_PLANETS:
+            data = chart.get(planet)
+            if data:
+                label = planet.capitalize()
+                lines.append(
+                    f"{label}: {data['degree']:.1f}° {data['sign']} (House {data.get('house', '-')})"
+                )
+        return "\n".join(lines) if lines else "Not available."
+
     # --- Fast mode: bypass full prompt when ephemeris is available ---
     if ephemeris_context:
-        natal_section = (
-            "\n".join(
-                f"{planet.capitalize()}: {data['degree']:.1f}° {data['sign']} (House {data.get('house', '-')})"
-                for planet, data in natal_chart.items()
-                if planet in ["sun", "moon", "saturn", "mars"]
-            )
-            if natal_chart
-            else "Not available."
-        )
-        return f"""You are an astrologer.
+        natal_section = _build_natal_section(natal_chart)
+        return f"""You are a personalised astrologer. The user's birth chart is already on file — do NOT ask for birth details.
 
-Transit:
-{ephemeris_context}
-
-Natal:
+User Birth Chart (on file):
 {natal_section}
 
-Give a clear and complete answer in 2 short paragraphs.
+Current Transits:
+{ephemeris_context}
 
+Using the natal chart and current transits above, give a clear and complete answer in 2 short paragraphs.
 End with a final conclusion sentence.
 
 Question:
 {user_input}""".strip()
 
-    # --- Compressed natal section (FIX 1) ---
+    # --- Full natal section for non-fast path ---
     natal_section = (
-        "User natal chart:\n" +
-        "\n".join(
-            f"{planet.capitalize()}: {data['degree']:.1f}° {data['sign']} (House {data.get('house', '-')})"
-            for planet, data in natal_chart.items()
-            if planet in ["sun", "moon", "saturn", "mars"]
-        )
+        "User Birth Chart (on file):\n" + _build_natal_section(natal_chart)
         if natal_chart
         else "No natal chart available."
     )
@@ -84,13 +86,14 @@ Question:
 
     # --- Final prompt ---
     return f"""
-You are a personalized astrology learning companion.
+You are a personalised astrology learning companion. The user's birth chart is already on file — do NOT ask for birth details.
 
 Guidelines:
+- Use the natal chart provided below.
 - Use ephemeris data when available.
 - Refer to planetary signs explicitly.
 - Treat the date as a real moment in time.
-- When natal chart is available, compare transit with natal placements.
+- Compare transits with natal placements.
 - Keep the explanation clear, grounded, and non-generic.
 
 User profile:
