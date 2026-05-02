@@ -32,16 +32,9 @@ Transit:
 Natal:
 {natal_section}
 
-Answer in EXACT structure:
+Give a clear and complete answer in 2 short paragraphs.
 
-1. Core Transit Insight (2–3 sentences)
-2. Natal Impact (2–3 sentences)
-3. Current Life Theme (2–3 sentences)
-4. Final Takeaway (1–2 sentences)
-
-Ensure ALL 4 sections are completed.
-Do not leave the answer unfinished.
-If response is cut, prioritize completing the Final Takeaway section.
+End with a final conclusion sentence.
 
 Question:
 {user_input}""".strip()

@@ -282,6 +282,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ephemeris_context = await asyncio.to_thread(build_ephemeris_context, raw_input)
     else:
         ephemeris_context = None
+    print("EPHEMERIS CONTEXT:", ephemeris_context)
 
     # --- Store memory ---
     if processed_input.should_store and is_valid_memory(raw_input) and not reflection_mode:
@@ -342,10 +343,9 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 relevant_insights,
                 ephemeris_context,
             )
-            max_tokens = 300 if is_astro_query else 800
 
             response, usage = await asyncio.wait_for(
-                asyncio.to_thread(generate_response, prompt, max_tokens),
+                asyncio.to_thread(generate_response, prompt),
                 timeout=settings.max_ai_time,
             )
 
@@ -365,18 +365,11 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cost = estimate_cost(usage)
     exceeded, count, total_cost = budget.record(cost)
 
-    logger.debug("FULL RESPONSE LENGTH: %d", len(final_response))
-    logger.debug("FULL RESPONSE PREVIEW: %s", final_response[:500])
-    chunks = split_response(final_response)
-    logger.debug("TOTAL CHUNKS: %d", len(chunks))
-    for i, c in enumerate(chunks):
-        logger.debug("CHUNK %d LENGTH: %d", i, len(c))
-    if not chunks:
-        await message.reply_text(final_response)
-    else:
-        for chunk in chunks:
-            if chunk.strip():
-                await message.reply_text(chunk)
+    print("==== DEBUG START ====")
+    print("RAW RESPONSE LENGTH:", len(final_response))
+    print("RAW RESPONSE FULL:", final_response)
+    print("==== DEBUG END ====")
+    await message.reply_text(final_response)
     try:
         await asyncio.to_thread(
             store_interaction,
