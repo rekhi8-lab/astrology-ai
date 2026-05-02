@@ -321,6 +321,9 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             relevant_insights = []
 
     # --- Generate response ---
+    await message.reply_text("Analyzing your chart, this may take a few seconds...")
+
+    usage = None
     try:
         if reflection_mode:
             response, usage = await asyncio.wait_for(
@@ -332,7 +335,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     relevant_insights,
                     ephemeris_context,
                 ),
-                timeout=settings.max_ai_time,
+                timeout=25,
             )
         else:
             prompt = await asyncio.to_thread(
@@ -346,12 +349,17 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
             response, usage = await asyncio.wait_for(
                 asyncio.to_thread(generate_response, prompt),
-                timeout=settings.max_ai_time,
+                timeout=25,
             )
 
     except asyncio.TimeoutError:
-        await message.reply_text("The model took too long to respond. Please try again.")
-        return
+        print("⚠️ Timeout occurred. Switching to fallback mode.")
+        fallback_prompt = (
+            f"You are an astrologer.\n\n"
+            f"Give a concise answer in 1 short paragraph with a clear conclusion.\n\n"
+            f"Question:\n{raw_input}"
+        )
+        response, usage = await asyncio.to_thread(generate_response, fallback_prompt, 300)
 
     if not reflection_mode and has_topic_overlap(raw_input, prior_topics):
         response = f"You've explored this topic before. Let's go deeper.\n\n{response}"
@@ -368,6 +376,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     print("==== DEBUG START ====")
     print("RAW RESPONSE LENGTH:", len(final_response))
     print("RAW RESPONSE FULL:", final_response)
+    print("FINAL RESPONSE LENGTH:", len(final_response))
     print("==== DEBUG END ====")
     await message.reply_text(final_response)
     try:
