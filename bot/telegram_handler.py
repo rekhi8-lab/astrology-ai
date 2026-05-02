@@ -28,6 +28,7 @@ from storage.sheets_logger import log_entry
 from utils.cost_tracker import estimate_cost
 from utils.helpers import delete_file, ensure_directory
 from utils.prompt_builder import build_prompt
+from utils.user_profile import USER_PROFILE
 from utils.reflection import generate_reflection
 
 
@@ -347,6 +348,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 user_profile,
                 relevant_insights,
                 ephemeris_context,
+                USER_PROFILE,
             )
 
             response, usage = await asyncio.wait_for(

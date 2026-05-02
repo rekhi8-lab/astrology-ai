@@ -9,6 +9,7 @@ def build_prompt(
     user_profile: dict | None = None,
     relevant_insights: list[dict] | None = None,
     ephemeris_context: str = "",
+    user_profile_block: str | None = None,
 ) -> str:
 
     natal_chart = load_natal_chart()
@@ -29,18 +30,18 @@ def build_prompt(
                 )
         return "\n".join(lines) if lines else "Not available."
 
+    profile_block = user_profile_block or ""
+
     # --- Fast mode: bypass full prompt when ephemeris is available ---
     if ephemeris_context:
-        natal_section = _build_natal_section(natal_chart)
-        return f"""You are a personalised astrologer. The user's birth chart is already on file — do NOT ask for birth details.
+        return f"""You are a personalised astrologer.
 
-User Birth Chart (on file):
-{natal_section}
+{profile_block}
 
 Current Transits:
 {ephemeris_context}
 
-Using the natal chart and current transits above, give a clear and complete answer in 2 short paragraphs.
+Give a clear and complete answer in 2 short paragraphs.
 End with a final conclusion sentence.
 
 Question:
@@ -85,18 +86,19 @@ Question:
     )
 
     # --- Final prompt ---
-    return f"""
-You are a personalised astrology learning companion. The user's birth chart is already on file — do NOT ask for birth details.
+    return f"""You are a personalised astrology learning companion.
+
+{profile_block}
 
 Guidelines:
-- Use the natal chart provided below.
+- Use the natal chart provided above.
 - Use ephemeris data when available.
 - Refer to planetary signs explicitly.
 - Treat the date as a real moment in time.
 - Compare transits with natal placements.
 - Keep the explanation clear, grounded, and non-generic.
 
-User profile:
+User preferences:
 - Preferred depth: {depth_preference}
 - Frequently asked topics: {frequent_topics}
 
@@ -111,5 +113,4 @@ Retrieved context:
 {natal_section}
 
 User question:
-{user_input}
-""".strip()
+{user_input}""".strip()
