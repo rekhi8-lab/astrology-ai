@@ -48,16 +48,24 @@ def build_ephemeris_context(user_text: str) -> str | None:
     """
     Build a compact, relevant ephemeris context block for the prompt.
     """
+    from ephemeris.loader import EPHEMERIS_DATA
+    print("EPHEMERIS TOTAL DATES:", len(EPHEMERIS_DATA))
 
-    date = extract_date(user_text) or datetime.utcnow().strftime("%Y-%m-%d")
+    extracted = extract_date(user_text)
+    date = extracted or datetime.utcnow().strftime("%Y-%m-%d")
+    print("USER INPUT:", user_text)
+    print("EXTRACTED DATE:", extracted)
+    print("LOOKUP DATE:", date)
 
     data = get_ephemeris(date)
     if not data:
+        print("EPHEMERIS RESULT: None")
         return None
 
     selected_planets = _select_relevant_planets(user_text, data)
 
     if not selected_planets:
+        print("EPHEMERIS RESULT: no planets selected")
         return None
 
     lines = [f"Ephemeris for {date}:"]
@@ -68,4 +76,7 @@ def build_ephemeris_context(user_text: str) -> str | None:
             formatted = format_position(value)
             lines.append(f"{planet.capitalize()}: {formatted}")
 
-    return "\n".join(lines)
+    result = "\n".join(lines)
+    print("EPHEMERIS RESULT:", result)
+    print("FAST MODE TRIGGERED" if result else "FAST MODE NOT TRIGGERED")
+    return result
