@@ -387,7 +387,18 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     print("RAW RESPONSE FULL:", final_response)
     print("FINAL RESPONSE LENGTH:", len(final_response))
     print("==== DEBUG END ====")
-    await message.reply_text(final_response)
+
+    if not final_response or len(final_response.strip()) == 0:
+        await message.reply_text("Sorry, I couldn't generate a response.")
+        return
+
+    chunks = split_response(final_response)
+    print("TOTAL RESPONSE LENGTH:", len(final_response))
+    print("TOTAL CHUNKS:", len(chunks))
+
+    for chunk in chunks:
+        if chunk.strip():
+            await message.reply_text(chunk)
     try:
         await asyncio.to_thread(
             store_interaction,
