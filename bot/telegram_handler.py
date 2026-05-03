@@ -25,6 +25,7 @@ from memory.retriever import get_insight_sequence, get_recent_insights, get_rele
 from memory.trajectory import build_learning_trajectory
 from memory.user_profiles import get_user_profile, update_user_profile
 from storage.sheets_logger import log_entry
+from utils.aspect_detector import detect_aspects, get_natal_data
 from utils.cost_tracker import estimate_cost
 from utils.helpers import delete_file, ensure_directory
 from utils.prompt_builder import build_prompt
@@ -74,6 +75,37 @@ budget = DailyBudget()
 user_failures: defaultdict[int, int] = defaultdict(int)
 chat_history: dict[int, list[str]] = {}
 chat_summary: dict[int, str] = {}
+
+
+def _parse_transit_positions(ephemeris_context: str) -> dict[str, float]:
+    """
+    Parse the ephemeris context string produced by build_ephemeris_context()
+    back into a {planet_name: absolute_degree (0-360)} dict.
+
+    Expected line format:  "Saturn: 9.31° Aries"
+    The formatter stores within-sign degrees, so we must add the sign offset.
+    """
+    import re
+    from utils.aspect_detector import SIGN_DEGREES
+
+    positions: dict[str, float] = {}
+    # Match: "Planet: <within_sign_degree>° <SignName>"
+    pattern = re.compile(
+        r"^\s*([A-Za-z]+):\s*([\d.]+)[°\s]+([A-Za-z]+)", re.IGNORECASE
+    )
+    for line in ephemeris_context.splitlines():
+        m = pattern.match(line)
+        if m:
+            planet = m.group(1).lower()
+            sign = m.group(3).lower()
+            try:
+                within_deg = float(m.group(2))
+                offset = SIGN_DEGREES.get(sign)
+                if offset is not None:
+                    positions[planet] = offset + within_deg
+            except ValueError:
+                pass
+    return positions
 
 
 async def summarize_history(history_list: list[str], previous_summary: str = "") -> str:
@@ -389,6 +421,17 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             print("SUMMARY LENGTH:", len(history_summary))
             print("SUMMARY CONTENT:", history_summary)
 
+            # --- Aspect detection ---
+            aspects_summary: list[str] = []
+            if ephemeris_context:
+                try:
+                    transit_positions = _parse_transit_positions(ephemeris_context)
+                    natal_data = await asyncio.to_thread(get_natal_data)
+                    aspects_summary = detect_aspects(transit_positions, natal_data)
+                    print("ASPECTS DETECTED:", aspects_summary)
+                except Exception:
+                    logger.exception("Aspect detection failed")
+
             prompt = await asyncio.to_thread(
                 build_prompt,
                 raw_input,
@@ -398,12 +441,14 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 ephemeris_context,
                 USER_PROFILE,
                 history_summary,
+                aspects_summary,
             )
 
             print("USING FAST MODE:", bool(ephemeris_context))
             print("====== FINAL PROMPT START ======")
             print(prompt)
             print("====== FINAL PROMPT END ======")
+
 
             response, usage = await asyncio.wait_for(
                 asyncio.to_thread(generate_response, prompt),

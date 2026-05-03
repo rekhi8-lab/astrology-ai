@@ -11,6 +11,7 @@ def build_prompt(
     ephemeris_context: str = "",
     user_profile_block: str | None = None,
     history_summary: str = "",
+    aspects_summary: list[str] | None = None,
 ) -> str:
 
     natal_chart = load_natal_chart()
@@ -38,7 +39,14 @@ def build_prompt(
         "The user's complete and verified birth chart is provided below.\n"
         "All required birth data (date, time, place, and chart) is already available.\n\n"
         "You must proceed with analysis using this data.\n"
-        "Do not request or assume missing birth information."
+        "Do not request or assume missing birth information.\n\n"
+        "Accuracy rules you must follow:\n"
+        "- Clearly distinguish between a planet's NATAL placement and its current TRANSIT position.\n"
+        "  Example: 'Natal Saturn is in Libra (House 2); transit Saturn is currently in Aries.'\n"
+        "- When aspects are provided, mention them explicitly (e.g., 'transit Saturn opposes natal Saturn').\n"
+        "- Do NOT misstate the house of a transiting planet — transiting planets do not stay in natal houses.\n"
+        "- Ground every interpretation in the active Dasha period first, then transits, then natal placements.\n"
+        "- Be specific: cite degrees, signs, and houses from the provided data rather than speaking generically."
     )
 
     _history_section = (
@@ -47,10 +55,19 @@ def build_prompt(
         else ""
     )
 
+    # --- Aspects block (shared between fast and full path) ---
+    _aspects_section = (
+        "Astrological Aspects (auto-calculated, orb ≤5°):\n"
+        + "\n".join(f"  • {line}" for line in aspects_summary)
+        if aspects_summary
+        else ""
+    )
+
     # --- Fast mode: bypass full prompt when ephemeris is available ---
     if ephemeris_context:
         parts = [_INSTRUCTION, profile_block, _history_section,
                  f"Current Transits:\n{ephemeris_context}",
+                 _aspects_section,
                  f"Question:\n{user_input}"]
         return "\n\n".join(p for p in parts if p).strip()
 
@@ -116,7 +133,7 @@ Retrieved context:
 
 {ephemeris_section}
 
-{natal_section}
+{_aspects_section + chr(10) if _aspects_section else ""}{natal_section}
 
 User question:
 {user_input}""".strip()
