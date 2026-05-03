@@ -76,17 +76,21 @@ chat_history: dict[int, list[str]] = {}
 chat_summary: dict[int, str] = {}
 
 
-async def summarize_history(history_list: list[str]) -> str:
+async def summarize_history(history_list: list[str], previous_summary: str = "") -> str:
     if len(history_list) < 2:
-        return ""
-    text = "\n".join(history_list)
+        return previous_summary
     summary_prompt = (
-        "Summarize this conversation briefly in 2-3 lines.\n"
-        "Focus only on key topics and conclusions.\n\n"
-        f"{text}"
+        "You are summarizing a conversation for context retention.\n\n"
+        f"Previous summary (if any):\n{previous_summary}\n\n"
+        "New messages:\n" + "\n".join(history_list[-2:]) + "\n\n"
+        "Update the summary in 2-3 lines.\n\n"
+        "Keep:\n- main user concern\n- key astrological factors (dasha, transit, natal)\n\n"
+        "Avoid:\n- repetition\n- generic statements\n- loss of important details"
     )
     summary, _ = await asyncio.to_thread(generate_response, summary_prompt, 120)
-    return summary.strip()
+    return summary.strip()[:300]
+
+
 FIRST_PERSON_INDICATORS = (
     "i think",
     "i feel",
@@ -359,8 +363,19 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             # --- Conversation history + summary ---
             chat_history.setdefault(user.id, []).append(raw_input)
             chat_history[user.id] = chat_history[user.id][-5:]
-            history_summary = await summarize_history(chat_history[user.id])
-            chat_summary[user.id] = history_summary
+
+            if len(raw_input) < 40:
+                history_summary = chat_summary.get(user.id, "")
+            elif len(chat_history[user.id]) >= 3:
+                history_summary = await summarize_history(
+                    chat_history[user.id], chat_summary.get(user.id, "")
+                )
+                chat_summary[user.id] = history_summary
+            else:
+                history_summary = chat_summary.get(user.id, "")
+
+            print("SUMMARY LENGTH:", len(history_summary))
+            print("SUMMARY CONTENT:", history_summary)
 
             prompt = await asyncio.to_thread(
                 build_prompt,
