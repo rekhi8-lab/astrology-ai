@@ -79,16 +79,28 @@ chat_summary: dict[int, str] = {}
 async def summarize_history(history_list: list[str], previous_summary: str = "") -> str:
     if len(history_list) < 2:
         return previous_summary
+    new_messages = "\n".join(history_list[-2:])
     summary_prompt = (
-        "You are summarizing a conversation for context retention.\n\n"
-        f"Previous summary (if any):\n{previous_summary}\n\n"
-        "New messages:\n" + "\n".join(history_list[-2:]) + "\n\n"
-        "Update the summary in 2-3 lines.\n\n"
-        "Keep:\n- main user concern\n- key astrological factors (dasha, transit, natal)\n\n"
-        "Avoid:\n- repetition\n- generic statements\n- loss of important details"
+        "You are summarizing a conversation for intelligent context retention.\n\n"
+        f"Previous summary:\n{previous_summary}\n\n"
+        f"New messages:\n{new_messages}\n\n"
+        "Update the summary in MAX 3-4 lines using this structure:\n\n"
+        "Core Issue:\n<what the user is dealing with>\n\n"
+        "Key Factors (priority order):\n"
+        "1. Dasha (most important)\n"
+        "2. Transit (secondary)\n"
+        "3. Natal placements (supporting)\n\n"
+        "Direction:\n<what is happening / where it is heading>\n\n"
+        "Rules:\n"
+        "- Be concise\n"
+        "- Preserve important astrological signals\n"
+        "- Avoid generic language\n"
+        "- Do not exceed 300 characters"
     )
     summary, _ = await asyncio.to_thread(generate_response, summary_prompt, 120)
-    return summary.strip()[:300]
+    summary = summary.strip()[:300]
+    print("WEIGHTED SUMMARY:", summary)
+    return summary
 
 
 FIRST_PERSON_INDICATORS = (
