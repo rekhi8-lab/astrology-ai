@@ -28,8 +28,25 @@ ASPECTS: list[tuple[float, str, float]] = [
     (180.0, "opposition",   5.0),
 ]
 
-_SLOW_PLANETS = {"saturn", "jupiter", "pluto"}
-_PERSONAL_PLANETS = {"sun", "moon", "mars", "mercury", "venus"}
+EXCLUDE_PLANETS = ["moon"]
+
+STRONG_ASPECTS = ["opposition", "square"]
+SUPPORTIVE_ASPECTS = ["trine", "sextile"]
+
+HOUSE_MEANINGS: dict[int, str] = {
+    1:  "identity, self, direction",
+    2:  "money, income, resources",
+    3:  "communication, thinking, environment",
+    4:  "home, emotional foundation",
+    5:  "creativity, expression, romance",
+    6:  "work, health, routine",
+    7:  "relationships, partnerships",
+    8:  "transformation, shared resources",
+    9:  "beliefs, expansion, learning",
+    10: "career, public image",
+    11: "gains, networks",
+    12: "subconscious, isolation",
+}
 
 NATAL_PATH = Path(__file__).resolve().parent.parent / "ephemeris" / "natal_chart.json"
 
@@ -58,49 +75,83 @@ def calculate_aspect(transit_deg: float, natal_deg: float) -> tuple[str, float] 
     return None
 
 
-def get_aspect_priority(transit_planet: str, natal_planet: str, orb: float) -> str:
+def get_aspect_priority(
+    transit_planet: str,
+    natal_planet: str,
+    aspect: str,
+    orb: float,
+) -> str:
     """
-    Return HIGH / MEDIUM / LOW priority for an aspect.
+    Score-based priority: HIGH / MEDIUM / LOW.
 
-    Rules (in order of precedence):
-    - Orb ≤ 1°            → HIGH  (tight regardless of planets)
-    - Slow transit + orb ≤ 2° → HIGH
-    - Personal transit + orb ≤ 2° → MEDIUM
-    - Orb ≤ 3°            → MEDIUM
-    - Otherwise           → LOW
+    Scoring:
+      Orb  ≤ 1 → +3 | ≤ 2 → +2 | ≤ 3 → +1
+      Hard aspect (opposition/square) → +3 | soft → +1
+      Slow transit planet → +2
     """
-    t = transit_planet.lower()
+    slow_planets = {"saturn", "jupiter", "pluto"}
+
+    score = 0
+
     if orb <= 1.0:
+        score += 3
+    elif orb <= 2.0:
+        score += 2
+    elif orb <= 3.0:
+        score += 1
+
+    if aspect in STRONG_ASPECTS:
+        score += 3
+    elif aspect in SUPPORTIVE_ASPECTS:
+        score += 1
+
+    if transit_planet.lower() in slow_planets:
+        score += 2
+
+    if score >= 6:
         return "HIGH"
-    if t in _SLOW_PLANETS and orb <= 2.0:
-        return "HIGH"
-    if t in _PERSONAL_PLANETS and orb <= 2.0:
-        return "MEDIUM"
-    if orb <= 3.0:
+    if score >= 4:
         return "MEDIUM"
     return "LOW"
 
 
-def map_house_activation(transit_planet: str, natal_planet: str, natal_house: int | str) -> str:
-    """Return a human-readable house-activation label."""
-    return f"{natal_planet} activates House {natal_house}"
+def generate_event_trigger(
+    transit_planet: str,
+    aspect: str,
+    natal_planet: str,
+    house: int | str,
+) -> str:
+    """Return a time-bounded event prediction for the aspect."""
+    meaning = HOUSE_MEANINGS.get(house, "relevant life area") if isinstance(house, int) else "relevant life area"
+    t = transit_planet.lower()
+
+    if t == "saturn":
+        return (
+            f"Structural pressure building in {meaning}, "
+            f"requiring discipline and restructuring over next 2–4 months"
+        )
+    if t == "mars":
+        return (
+            f"Immediate action, conflict, or decisive movement likely in {meaning} "
+            f"within days to weeks"
+        )
+    if t == "jupiter":
+        return (
+            f"Opportunity, growth, or expansion opening in {meaning} "
+            f"over the coming months"
+        )
+    return f"Noticeable activity or shift in {meaning}"
 
 
 def get_natal_positions() -> dict[str, float]:
-    """
-    Load natal_chart.json and return planet → absolute-degree mapping.
-    Kept for backwards-compatibility; prefer get_natal_data().
-    """
-    data = get_natal_data()
-    return {planet: info["deg"] for planet, info in data.items()}
+    """planet → absolute-degree mapping (backwards-compatible wrapper)."""
+    return {planet: info["deg"] for planet, info in get_natal_data().items()}
 
 
 def get_natal_data() -> dict[str, dict]:
     """
-    Load natal_chart.json and return a structured mapping:
+    Load natal_chart.json and return:
         { "saturn": {"deg": 201.8, "house": 2, "sign": "Libra"}, ... }
-
-    Ascendant and Midheaven are included with house = "-" when absent.
     """
     if not NATAL_PATH.exists():
         return {}
@@ -111,9 +162,8 @@ def get_natal_data() -> dict[str, dict]:
     result: dict[str, dict] = {}
     for planet, data in chart.items():
         try:
-            abs_deg = sign_to_absolute(data["sign"], data["degree"])
             result[planet] = {
-                "deg": abs_deg,
+                "deg": sign_to_absolute(data["sign"], data["degree"]),
                 "house": data.get("house", "-"),
                 "sign": data["sign"],
             }
@@ -127,13 +177,12 @@ def detect_aspects(
     natal_data: dict[str, dict] | None = None,
 ) -> list[str]:
     """
-    Compare each transit planet against every natal planet.
+    Return up to 3 top-priority aspects as formatted strings, each followed
+    by an event prediction.  Moon transits and LOW-priority signals excluded.
 
-    Returns a list of structured strings ordered by priority (HIGH first):
-
-        [HIGH] Transit Saturn opposition Natal Mars (orb 0.67°) → activates House 1
-        [HIGH] Transit Mars square Natal Sun (orb 0.19°) → activates House 4
-        [LOW]  Transit Moon conjunction Natal Uranus (orb 0.39°) → activates House 3
+    Output format:
+        [HIGH] Transit Saturn opposition Natal Mars (orb 0.67°) → activates House 1 (identity, self, direction)
+        → Likely manifestation: Structural pressure building in ...
     """
     if natal_data is None:
         natal_data = get_natal_data()
@@ -141,11 +190,12 @@ def detect_aspects(
     if not natal_data:
         return []
 
-    _PRIORITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
-
-    raw: list[tuple[int, str]] = []
+    raw: list[dict] = []
 
     for t_planet, t_deg in transit_positions.items():
+        if t_planet.lower() in EXCLUDE_PLANETS:
+            continue
+
         for n_planet, n_info in natal_data.items():
             n_deg = n_info["deg"]
             n_house = n_info["house"]
@@ -155,14 +205,36 @@ def detect_aspects(
                 continue
 
             aspect_name, orb = result
-            priority = get_aspect_priority(t_planet, n_planet, orb)
+            priority = get_aspect_priority(t_planet, n_planet, aspect_name, orb)
 
-            line = (
-                f"[{priority}] Transit {t_planet.capitalize()} {aspect_name} "
-                f"Natal {n_planet.capitalize()} (orb {orb}°) "
-                f"→ activates House {n_house}"
-            )
-            raw.append((_PRIORITY_ORDER[priority], line))
+            if priority == "LOW":
+                continue
 
-    raw.sort(key=lambda x: x[0])
-    return [line for _, line in raw]
+            house_meaning = HOUSE_MEANINGS.get(n_house, "") if isinstance(n_house, int) else ""
+            house_label = f"House {n_house} ({house_meaning})" if house_meaning else f"House {n_house}"
+
+            event = generate_event_trigger(t_planet, aspect_name, n_planet, n_house)
+
+            raw.append({
+                "priority": priority,
+                "text": (
+                    f"[{priority}] Transit {t_planet.capitalize()} {aspect_name} "
+                    f"Natal {n_planet.capitalize()} (orb {orb}°) "
+                    f"→ activates {house_label}"
+                ),
+                "event": event,
+            })
+
+    # Sort HIGH before MEDIUM, then by insertion order (stable)
+    priority_order = {"HIGH": 0, "MEDIUM": 1}
+    raw.sort(key=lambda x: priority_order[x["priority"]])
+
+    # Cap at top 3
+    raw = raw[:3]
+
+    formatted: list[str] = []
+    for r in raw:
+        formatted.append(r["text"])
+        formatted.append(f"→ Likely manifestation: {r['event']}")
+
+    return formatted
