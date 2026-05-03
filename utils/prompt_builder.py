@@ -10,6 +10,7 @@ def build_prompt(
     relevant_insights: list[dict] | None = None,
     ephemeris_context: str = "",
     user_profile_block: str | None = None,
+    history_summary: str = "",
 ) -> str:
 
     natal_chart = load_natal_chart()
@@ -40,17 +41,18 @@ def build_prompt(
         "Do not request or assume missing birth information."
     )
 
+    _history_section = (
+        f"Conversation Context (summary):\n{history_summary}"
+        if history_summary
+        else ""
+    )
+
     # --- Fast mode: bypass full prompt when ephemeris is available ---
     if ephemeris_context:
-        return f"""{_INSTRUCTION}
-
-{profile_block}
-
-Current Transits:
-{ephemeris_context}
-
-Question:
-{user_input}""".strip()
+        parts = [_INSTRUCTION, profile_block, _history_section,
+                 f"Current Transits:\n{ephemeris_context}",
+                 f"Question:\n{user_input}"]
+        return "\n\n".join(p for p in parts if p).strip()
 
     # --- Full natal section for non-fast path ---
     natal_section = (
@@ -95,7 +97,7 @@ Question:
 
 {profile_block}
 
-Guidelines:
+{_history_section + chr(10) if _history_section else ""}Guidelines:
 - Use the natal chart above for all interpretations.
 - Use ephemeris data when available.
 - Refer to planetary signs explicitly.

@@ -72,6 +72,21 @@ def split_response(text: str, max_length: int = 3500) -> list[str]:
 
 budget = DailyBudget()
 user_failures: defaultdict[int, int] = defaultdict(int)
+chat_history: dict[int, list[str]] = {}
+chat_summary: dict[int, str] = {}
+
+
+async def summarize_history(history_list: list[str]) -> str:
+    if len(history_list) < 2:
+        return ""
+    text = "\n".join(history_list)
+    summary_prompt = (
+        "Summarize this conversation briefly in 2-3 lines.\n"
+        "Focus only on key topics and conclusions.\n\n"
+        f"{text}"
+    )
+    summary, _ = await asyncio.to_thread(generate_response, summary_prompt, 120)
+    return summary.strip()
 FIRST_PERSON_INDICATORS = (
     "i think",
     "i feel",
@@ -341,6 +356,12 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 timeout=25,
             )
         else:
+            # --- Conversation history + summary ---
+            chat_history.setdefault(user.id, []).append(raw_input)
+            chat_history[user.id] = chat_history[user.id][-5:]
+            history_summary = await summarize_history(chat_history[user.id])
+            chat_summary[user.id] = history_summary
+
             prompt = await asyncio.to_thread(
                 build_prompt,
                 raw_input,
@@ -349,6 +370,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 relevant_insights,
                 ephemeris_context,
                 USER_PROFILE,
+                history_summary,
             )
 
             print("USING FAST MODE:", bool(ephemeris_context))
